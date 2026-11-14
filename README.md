@@ -28,7 +28,7 @@ Each season is predicted week by week, using only matches played before each rou
 
 Using match results only, the Poisson model closes ~89% of the 2024/25 log-loss gap between the naive baseline and the bookmakers. The remaining gap is expected: bookmakers also price in injuries, transfers and team news.
 
-2025/26 was much harder to predict: more draws (27% vs 25%), fewer goals (2.75 vs 2.93 per match), and the model's log loss rose from 0.99 in August–December to 1.09 in January–May.
+2025/26 was harder to predict for everyone: the bookmakers' log loss also rose from 0.971 to 1.015 (more draws, fewer goals). The Poisson model fell further behind (66% of the gap closed vs 89%), and its log loss rose from 0.99 in August–December to 1.09 in January–May. The ratings react too slowly to in-season changes, which is what Elo and recent-form features (next step) should address.
 
 ## Data
 
