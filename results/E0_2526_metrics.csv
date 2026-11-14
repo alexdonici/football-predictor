@@ -1,0 +1,4 @@
+,log loss,Brier,accuracy
+Poisson model,1.0387,0.625,0.4737
+Bookmakers,1.0153,0.61,0.4947
+Baseline (past H/D/A rates),1.0845,0.6562,0.4263
