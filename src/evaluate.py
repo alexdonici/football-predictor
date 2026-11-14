@@ -29,8 +29,12 @@ def accuracy(p: np.ndarray, y: np.ndarray) -> float:
     return float(np.mean(p.argmax(axis=1) == y.argmax(axis=1)))
 
 
-def walk_forward(history: pd.DataFrame, test: pd.DataFrame, refit_days: int = 7, **model_kwargs) -> pd.DataFrame:
-    """Predict every match in `test`, refitting the model every `refit_days` days."""
+def walk_forward(history: pd.DataFrame, test: pd.DataFrame, model_cls=PoissonModel, refit_days: int = 7,
+                 **model_kwargs) -> pd.DataFrame:
+    """Predict every match in `test`, refitting the model every `refit_days` days.
+
+    `model_cls` is any class with fit(matches, as_of) and predict_proba(home, away).
+    """
     preds = []
     start = test["date"].min()
     while start <= test["date"].max():
@@ -38,7 +42,7 @@ def walk_forward(history: pd.DataFrame, test: pd.DataFrame, refit_days: int = 7,
         block = test[(test["date"] >= start) & (test["date"] < end)]
         if len(block):
             seen = pd.concat([history, test[test["date"] < start]])
-            model = PoissonModel(**model_kwargs).fit(seen, as_of=start)
+            model = model_cls(**model_kwargs).fit(seen, as_of=start)
             for _, m in block.iterrows():
                 ph, pd_, pa = model.predict_proba(m["home"], m["away"])
                 preds.append({**m.to_dict(), "p_h": ph, "p_d": pd_, "p_a": pa})
@@ -46,16 +50,28 @@ def walk_forward(history: pd.DataFrame, test: pd.DataFrame, refit_days: int = 7,
     return pd.DataFrame(preds)
 
 
-def report(preds: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
-    """Compare the model with the bookmakers and a naive baseline on the same matches."""
+def average(*preds: pd.DataFrame) -> pd.DataFrame:
+    """Simple ensemble: average the probabilities of several models (same matches, same order)."""
+    out = preds[0].copy()
+    cols = ["p_h", "p_d", "p_a"]
+    out[cols] = np.mean([p[cols].to_numpy() for p in preds], axis=0)
+    return out
+
+
+def report(preds: dict[str, pd.DataFrame], history: pd.DataFrame) -> pd.DataFrame:
+    """Compare models with the bookmakers and a naive baseline on the same matches.
+
+    `preds` maps a model name to its walk-forward predictions (all on the same test matches).
+    """
+    first = next(iter(preds.values()))
     base_rates = one_hot(history["result"]).mean(axis=0)  # how often H / D / A happened before
-    y = one_hot(preds["result"])
-    rows = {"Poisson model": preds[["p_h", "p_d", "p_a"]].to_numpy()}
-    if {"odds_h", "odds_d", "odds_a"} <= set(preds.columns):
-        ok = preds[["odds_h", "odds_d", "odds_a"]].notna().all(axis=1).to_numpy()
+    y = one_hot(first["result"])
+    rows = {name: p[["p_h", "p_d", "p_a"]].to_numpy() for name, p in preds.items()}
+    if {"odds_h", "odds_d", "odds_a"} <= set(first.columns):
+        ok = first[["odds_h", "odds_d", "odds_a"]].notna().all(axis=1).to_numpy()
         y = y[ok]
         rows = {k: v[ok] for k, v in rows.items()}
-        rows["Bookmakers"] = implied_probs(preds[ok])
+        rows["Bookmakers"] = implied_probs(first[ok])
     rows["Baseline (past H/D/A rates)"] = np.tile(base_rates, (len(y), 1))
     return pd.DataFrame(
         {name: {"log loss": log_loss(p, y), "Brier": brier(p, y), "accuracy": accuracy(p, y)}

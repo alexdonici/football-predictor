@@ -95,3 +95,39 @@ def test_walk_forward_has_no_lookahead(monkeypatch):
     preds = walk_forward(history, test)
     assert len(preds) == len(test)
     assert all(last_seen < as_of for last_seen, as_of in seen_max_dates)
+
+
+# ---------- Elo ----------
+from src.elo import EloModel, margin_multiplier  # noqa: E402
+
+
+def with_season(df: pd.DataFrame) -> pd.DataFrame:
+    return df.assign(season=df["date"].dt.year.astype(str))
+
+
+def test_margin_multiplier():
+    assert margin_multiplier(0) == margin_multiplier(1) == margin_multiplier(-1) == 1.0
+    assert margin_multiplier(2) == 1.5
+    assert margin_multiplier(4) > margin_multiplier(3) > 1.5
+
+
+def test_elo_ranks_strong_teams_higher_and_probabilities_are_valid():
+    df, true_att, _ = simulate_league(rounds=6)
+    model = EloModel().fit(with_season(df))
+    elo = np.array([model.rating(f"T{i}") for i in range(len(true_att))])
+    assert np.corrcoef(elo, true_att)[0, 1] > 0.6
+    for home, away in [("T0", "T1"), ("T3", "T7"), ("T0", "NewTeam")]:
+        p = model.predict_proba(home, away)
+        assert sum(p) == pytest.approx(1)
+        assert all(0 < x < 1 for x in p)
+    best, worst = f"T{elo.argmax()}", f"T{elo.argmin()}"
+    assert model.predict_proba(best, worst)[0] > model.predict_proba(worst, best)[0]
+
+
+def test_elo_ignores_matches_after_as_of():
+    df, _, _ = simulate_league(rounds=2)
+    df = with_season(df)
+    cutoff = df["date"].iloc[len(df) // 2]
+    a = EloModel().fit(df, as_of=cutoff)
+    b = EloModel().fit(df[df["date"] < cutoff])
+    assert a.ratings_ == b.ratings_

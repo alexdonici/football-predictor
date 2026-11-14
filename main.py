@@ -14,7 +14,8 @@ import pandas as pd
 import requests
 
 from src.data import current_season, load_seasons
-from src.evaluate import report, walk_forward
+from src.elo import EloModel
+from src.evaluate import average, report, walk_forward
 from src.poisson import PoissonModel
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -54,29 +55,39 @@ def main():
         known = set(data["home"]) | set(data["away"])
         check_team(home, known)
         check_team(away, known)
-        model = PoissonModel().fit(data)
-        lh, la = model.expected_goals(home, away)
-        ph, pd_, pa = model.predict_proba(home, away)
-        print(f"{home} vs {away}")
-        print(f"Expected goals: {lh:.2f} - {la:.2f}")
-        print(f"Home {ph:.1%} | Draw {pd_:.1%} | Away {pa:.1%}")
+        poisson = PoissonModel().fit(data)
+        elo = EloModel().fit(data)
+        lh, la = poisson.expected_goals(home, away)
+        print(f"\n{home} vs {away}")
+        print(f"Expected goals (Poisson): {lh:.2f} - {la:.2f}")
+        print(f"Elo ratings: {elo.rating(home):.0f} vs {elo.rating(away):.0f}\n")
+        for name, model in [("Poisson", poisson), ("Elo", elo)]:
+            ph, pd_, pa = model.predict_proba(home, away)
+            print(f"{name:<8} Home {ph:6.1%} | Draw {pd_:6.1%} | Away {pa:6.1%}")
         return
 
     print(f"Backtesting {args.league} {args.test} ({len(test)} matches, refit weekly)...")
-    preds = walk_forward(history, test)
+    preds = {"Poisson model": walk_forward(history, test, PoissonModel),
+             "Elo model": walk_forward(history, test, EloModel)}
+    preds["Average (Poisson + Elo)"] = average(*preds.values())
     metrics = report(preds, history)
     print("\nLower log loss / Brier = better probabilities\n")
     print(metrics.to_string())
 
     RESULTS_DIR.mkdir(exist_ok=True)
     stem = f"{args.league}_{args.test}"
-    preds.to_csv(RESULTS_DIR / f"{stem}_predictions.csv", index=False)
+    out = preds["Poisson model"].drop(columns=["p_h", "p_d", "p_a"])
+    for name, short in [("Poisson model", "poisson"), ("Elo model", "elo")]:
+        for c in ["p_h", "p_d", "p_a"]:
+            out[f"{short}_{c}"] = preds[name][c].to_numpy()
+    out.to_csv(RESULTS_DIR / f"{stem}_predictions.csv", index=False)
     metrics.to_csv(RESULTS_DIR / f"{stem}_metrics.csv")
     print(f"\nSaved predictions and metrics to {RESULTS_DIR.name}/{stem}_*.csv")
 
-    final = PoissonModel().fit(pd.concat([history, test]))
-    print("\nTeam ratings after the last match in the data (top 10):")
-    print(final.ratings_table().head(10).round(3).to_string(index=False))
+    data = pd.concat([history, test])
+    ratings = PoissonModel().fit(data).ratings_table().merge(EloModel().fit(data).ratings_table(), on="team")
+    print("\nTeam ratings after the last match in the data (top 10 by Poisson strength):")
+    print(ratings.head(10).round({"attack": 3, "defence": 3, "strength": 3, "elo": 0}).to_string(index=False))
 
 
 if __name__ == "__main__":

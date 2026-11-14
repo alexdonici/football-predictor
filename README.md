@@ -4,7 +4,9 @@
 
 Predicts the probabilities of home win / draw / away win (1/X/2) for football matches and benchmarks them against bookmaker odds.
 
-The first model is a **Poisson goals model**: every team gets an attack and a defence rating, fitted by maximum likelihood on historical results, with recent matches weighted more (exponential time decay). Match probabilities come from the distribution of possible scores.
+Two models so far:
+- **Poisson goals model**: every team gets an attack and a defence rating, fitted by maximum likelihood on historical results, with recent matches weighted more (exponential time decay). Match probabilities come from the distribution of possible scores.
+- **Elo ratings**: every team has one rating, updated after each match (bigger wins move it more). The rating difference is turned into home/draw/away probabilities with an ordered logistic model fitted on past matches.
 
 ## Results (Premier League, walk-forward)
 
@@ -24,11 +26,19 @@ Each season is predicted week by week, using only matches played before each rou
 |-------------------------------|-----------:|--------:|-----------:|
 | Bookmakers (margin removed)   |     0.9706 |  0.5789 |      54.2% |
 | **Poisson model**             | **0.9833** | **0.5879** | **53.4%** |
+| Elo model                     |     1.0072 |  0.6032 |      52.1% |
+| Average (Poisson + Elo)       |     0.9931 |  0.5944 |      52.4% |
 | Baseline (past H/D/A rates)   |     1.0826 |  0.6569 |      40.8% |
 
 Using match results only, the Poisson model closes ~89% of the 2024/25 log-loss gap between the naive baseline and the bookmakers. The remaining gap is expected: bookmakers also price in injuries, transfers and team news.
 
-2025/26 was harder to predict for everyone: the bookmakers' log loss also rose from 0.971 to 1.015 (more draws, fewer goals). The Poisson model fell further behind (66% of the gap closed vs 89%), and its log loss rose from 0.99 in August–December to 1.09 in January–May. The ratings react too slowly to in-season changes, which is what Elo and recent-form features (next step) should address.
+2025/26 was harder to predict for everyone: the bookmakers' log loss also rose from 0.971 to 1.015 (more draws, fewer goals). The Poisson model fell further behind (66% of the gap closed vs 89%), and its log loss rose from 0.99 in August–December to 1.09 in January–May. One hypothesis was that the ratings react too slowly to in-season changes; Elo, which updates after every match, was the first test of that idea (below).
+
+**Elo vs Poisson.** Elo was expected to help because it reacts faster, but it is worse than Poisson in both test seasons, and averaging the two does not beat Poisson alone. Two lessons:
+- Tuning on 2023/24 picked a *slow* Elo (K = 10, no reset between seasons): football results are noisy, so reacting strongly to each match hurts.
+- Poisson uses the goals scored and conceded, while Elo mostly uses win/draw/loss, so Poisson simply sees more information.
+
+Elo is still kept: it is a compact strength measure and will be one of the input features for the machine-learning models.
 
 ## Data
 
@@ -66,6 +76,7 @@ Benchmarks: bookmaker implied probabilities (margin removed by normalisation) an
 - **Promoted teams.** A team with no history starts at the level of the three weakest established teams. Without extra care, a newly promoted team's rating swings to extremes after one or two results (e.g. Ipswich got a 0.03% away-win chance at Man City after losing their opener). Ratings of new teams are therefore blended with that prior, weighted like 10 matches. The weight was chosen on 2023/24 (validation) and then checked once on 2024/25: metrics unchanged, extreme probabilities gone (minimum outcome probability 0.03% → 0.7%).
 - **Date parsing** handles both `dd/mm/yy` (football-data.co.uk) and ISO `yyyy-mm-dd` (some mirrors). Parsing ISO dates with `dayfirst=True` silently swaps day and month and breaks the chronological order of the backtest.
 - The optimiser uses an analytic gradient (verified against finite differences).
+- **Elo settings** were tuned on 2023/24 only (grid over K and between-season reversion) and then applied unchanged to 2024/25 and 2025/26. New teams start at the average of the three lowest ratings. The first 300 days of data are not used to calibrate the rating difference → 1X2 mapping, because all teams still sit near the starting rating.
 
 ## Tests
 
@@ -74,14 +85,15 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Tests run offline on simulated leagues: parameter recovery, valid probabilities, metric sanity checks, date parsing, current-season detection and a no-look-ahead check of the backtest. They run on every push via GitHub Actions.
+Tests run offline on simulated leagues: parameter recovery, valid probabilities, metric sanity checks, date parsing, current-season detection, Elo behaviour and no-look-ahead checks of the backtest and of Elo. They run on every push via GitHub Actions.
 
 ## Roadmap
 
 - [x] Data loading and cleaning
 - [x] Poisson model with time decay
 - [x] Walk-forward backtest vs bookmakers
-- [ ] Elo ratings and recent form features
+- [x] Elo ratings
+- [ ] Recent form features
 - [ ] Machine learning model (logistic regression / XGBoost)
 - [ ] Web dashboard (Django or Streamlit)
 - [ ] Docker image and online deployment
@@ -91,6 +103,7 @@ Tests run offline on simulated leagues: parameter recovery, valid probabilities,
 ```
 src/data.py       download and clean match data
 src/poisson.py    Poisson goals model
+src/elo.py        Elo ratings + ordered logit for 1X2
 src/evaluate.py   walk-forward backtest and metrics
 main.py           command-line entry point
 tests/            offline unit tests
