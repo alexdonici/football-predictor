@@ -131,3 +131,45 @@ def test_elo_ignores_matches_after_as_of():
     a = EloModel().fit(df, as_of=cutoff)
     b = EloModel().fit(df[df["date"] < cutoff])
     assert a.ratings_ == b.ratings_
+
+
+# ---------- Features ----------
+from src.features import FEATURE_COLUMNS, build_features  # noqa: E402
+
+
+def test_form_matches_hand_calculation():
+    df = with_season(simulate_league(rounds=2)[0])
+    f = build_features(df, window=3)
+    row = f[f["home"] == "T0"].iloc[-1]
+    before = df[(df["date"] < row["date"]) & ((df["home"] == "T0") | (df["away"] == "T0"))].tail(3)
+    gf = np.where(before["home"] == "T0", before["home_goals"], before["away_goals"])
+    ga = np.where(before["home"] == "T0", before["away_goals"], before["home_goals"])
+    pts = np.select([gf > ga, gf == ga], [3, 1], 0)
+    assert row["home_form_pts"] == pytest.approx(pts.mean())
+    assert row["home_form_gf"] == pytest.approx(gf.mean())
+
+
+def test_features_never_see_the_match_itself_or_the_future():
+    df = with_season(simulate_league(rounds=2)[0])
+    k = len(df) // 2
+    before = build_features(df)
+    changed = df.copy()
+    changed.loc[k:, "home_goals"] += 5          # rewrite the result of match k and every later match
+    changed.loc[k:, "result"] = "H"
+    after = build_features(changed)
+    pd.testing.assert_frame_equal(before.loc[:k, FEATURE_COLUMNS], after.loc[:k, FEATURE_COLUMNS])
+
+
+def test_first_matches_have_no_form():
+    f = build_features(with_season(simulate_league(rounds=1)[0]), window=5)
+    assert f[["home_form_pts", "away_form_pts"]].iloc[:5].isna().all().all()
+
+
+def test_elo_all_teams_start_equal_in_first_season():
+    day = pd.Timestamp("2024-08-17")
+    df = pd.DataFrame({"date": [day, day, day + pd.Timedelta(days=7)], "home": ["A", "C", "E"],
+                       "away": ["B", "D", "F"], "home_goals": [3, 0, 1], "away_goals": [0, 2, 1],
+                       "result": ["H", "A", "D"], "season": "2425"})
+    f = build_features(df)
+    # Nobody had played before these matches, so each pair is level: the difference is just home advantage
+    assert (f["elo_diff"] == EloModel().home_adv).all()

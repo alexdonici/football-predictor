@@ -47,6 +47,7 @@ class EloModel:
         self.ratings_ = {}
         diffs = np.empty(len(matches))
         season = None
+        first_season = matches["season"].iloc[0] if len(matches) else None
         for i, m in enumerate(matches.itertuples(index=False)):
             if m.season != season:
                 if season is not None:
@@ -55,7 +56,8 @@ class EloModel:
                 season = m.season
             for team in (m.home, m.away):
                 if team not in self.ratings_:
-                    self.ratings_[team] = self._new_team_rating()
+                    # In the first season of the data every team is new, so all start equal
+                    self.ratings_[team] = START if m.season == first_season else self._new_team_rating()
 
             diff = self.ratings_[m.home] + self.home_adv - self.ratings_[m.away]
             diffs[i] = diff

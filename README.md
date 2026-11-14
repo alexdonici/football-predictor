@@ -17,7 +17,9 @@ Each season is predicted week by week, using only matches played before each rou
 | Model                         | Log loss ↓ | Brier ↓ | Accuracy ↑ |
 |-------------------------------|-----------:|--------:|-----------:|
 | Bookmakers (margin removed)   |     1.0153 |  0.6100 |      49.5% |
-| **Poisson model**             | **1.0387** | **0.6250** |**47.4%**|
+| **Poisson model**             | **1.0387** | **0.6250** | **47.4%** |
+| Elo model                     |     1.0458 |  0.6301 |      47.1% |
+| Average (Poisson + Elo)       |     1.0399 |  0.6263 |      46.6% |
 | Baseline (past H/D/A rates)   |     1.0845 |  0.6562 |      42.6% |
 
 **2024/25** (trained on 2021/22–2023/24, 380 matches)
@@ -40,6 +42,17 @@ Using match results only, the Poisson model closes ~89% of the 2024/25 log-loss 
 
 Elo is still kept: it is a compact strength measure and will be one of the input features for the machine-learning models.
 
+**Does recent form help?** Form features (points and goal difference per match over the last 5 matches, and home-only / away-only form) were tested with a logistic regression trained on past seasons (`python -m experiments.form_vs_elo`):
+
+| Log loss                   | 2023/24 | 2024/25 | 2025/26 |
+|----------------------------|--------:|--------:|--------:|
+| Elo only                   |  0.9242 |  1.0086 |  1.0476 |
+| Elo + form                 |  0.9231 |  1.0079 |  1.0430 |
+| Elo + form + venue form    |  0.9241 |  1.0130 |  1.0425 |
+| Form only (no Elo)         |  0.9825 |  1.0317 |  1.0525 |
+
+Form adds at most ~0.005 on top of Elo, which is within noise, and home/away form adds nothing. Elo is already a weighted summary of past results, so the last five matches say little that is new.
+
 ## Data
 
 Historical results and odds from [football-data.co.uk](https://www.football-data.co.uk/), downloaded automatically and cached in `data/raw/`. Finished seasons are downloaded once; the season in progress is refreshed when the cache is older than 12 hours.
@@ -55,6 +68,7 @@ python main.py                                   # backtest Premier League 2025/
 python main.py --test 2425 --train 2122 2223 2324  # backtest 2024/25
 python main.py --league SP1                      # La Liga
 python main.py --predict Arsenal "Man United"    # next match; quote names with spaces
+python main.py --export-features                 # pre-match features as CSV
 ```
 
 Backtest predictions and metrics are saved to `results/`. `--predict` also uses the matches already played in the current season.
@@ -85,7 +99,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Tests run offline on simulated leagues: parameter recovery, valid probabilities, metric sanity checks, date parsing, current-season detection, Elo behaviour and no-look-ahead checks of the backtest and of Elo. They run on every push via GitHub Actions.
+Tests run offline on simulated leagues: parameter recovery, valid probabilities, metric sanity checks, date parsing, current-season detection, Elo behaviour, form calculations and no-look-ahead checks of the backtest, Elo and the features. They run on every push via GitHub Actions.
 
 ## Roadmap
 
@@ -93,7 +107,7 @@ Tests run offline on simulated leagues: parameter recovery, valid probabilities,
 - [x] Poisson model with time decay
 - [x] Walk-forward backtest vs bookmakers
 - [x] Elo ratings
-- [ ] Recent form features
+- [x] Recent form features (little value beyond Elo)
 - [ ] Machine learning model (logistic regression / XGBoost)
 - [ ] Web dashboard (Django or Streamlit)
 - [ ] Docker image and online deployment
@@ -104,6 +118,8 @@ Tests run offline on simulated leagues: parameter recovery, valid probabilities,
 src/data.py       download and clean match data
 src/poisson.py    Poisson goals model
 src/elo.py        Elo ratings + ordered logit for 1X2
+src/features.py   pre-match features (Elo, form) for ML models
+experiments/      reproducible one-off analyses
 src/evaluate.py   walk-forward backtest and metrics
 main.py           command-line entry point
 tests/            offline unit tests

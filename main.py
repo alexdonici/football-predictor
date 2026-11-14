@@ -4,6 +4,7 @@ Examples:
     python main.py                                   # Premier League, train 2021-25, test 2025/26
     python main.py --league SP1                      # La Liga
     python main.py --predict Arsenal "Man United"    # one match, model fitted on all data incl. current season
+    python main.py --export-features                 # pre-match features (Elo, form) as CSV
 """
 import argparse
 import difflib
@@ -16,6 +17,7 @@ import requests
 from src.data import current_season, load_seasons
 from src.elo import EloModel
 from src.evaluate import average, report, walk_forward
+from src.features import build_features
 from src.poisson import PoissonModel
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -37,10 +39,18 @@ def main():
     ap.add_argument("--train", nargs="+", default=["2122", "2223", "2324", "2425"], help="seasons used as history")
     ap.add_argument("--test", default="2526", help="season to backtest on")
     ap.add_argument("--predict", nargs=2, metavar=("HOME", "AWAY"), help="predict one match instead of backtesting")
+    ap.add_argument("--export-features", action="store_true", help="save pre-match features (Elo, form) to results/")
     args = ap.parse_args()
 
     history = load_seasons(args.league, args.train)
     test = load_seasons(args.league, [args.test])
+
+    if args.export_features:
+        RESULTS_DIR.mkdir(exist_ok=True)
+        path = RESULTS_DIR / f"{args.league}_features.csv"
+        build_features(pd.concat([history, test])).to_csv(path, index=False)
+        print(f"Saved pre-match features for {len(history) + len(test)} matches to {RESULTS_DIR.name}/{path.name}")
+        return
 
     if args.predict:
         data = pd.concat([history, test])
