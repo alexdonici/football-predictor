@@ -10,18 +10,38 @@ weakest established teams until they have played enough matches.
 """
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
+from scipy.optimize import minimize, minimize_scalar
 from scipy.stats import poisson
 
 
+def dc_tau(x, y, lh, la, rho):
+    """Dixon-Coles adjustment factor for low scores (1 for every other score).
+
+    A negative rho makes 0-0 and 1-1 more likely and 1-0 / 0-1 less likely.
+    """
+    x, y = np.asarray(x), np.asarray(y)
+    tau = np.ones(np.broadcast(x, y, lh, la).shape)
+    tau = np.where((x == 0) & (y == 0), 1 - lh * la * rho, tau)
+    tau = np.where((x == 0) & (y == 1), 1 + lh * rho, tau)
+    tau = np.where((x == 1) & (y == 0), 1 + la * rho, tau)
+    tau = np.where((x == 1) & (y == 1), 1 - rho, tau)
+    return tau
+
+
 class PoissonModel:
-    def __init__(self, xi: float = 0.0019, ridge: float = 1e-3, max_goals: int = 10, prior_matches: float = 10.0):
+    def __init__(self, xi: float = 0.0019, ridge: float = 1e-3, max_goals: int = 10, prior_matches: float = 10.0,
+                 dixon_coles: bool = False, shots_weight: float = 0.25):
         self.xi = xi              # time decay per day (0.0019 ~ half-life of one year)
         self.ridge = ridge        # small L2 penalty for stability
         self.max_goals = max_goals
         # Newly arrived teams have few matches, so their fitted ratings are noisy.
         # Blend them with a "promoted team" prior worth this many (weighted) matches.
         self.prior_matches = prior_matches
+        # Dixon-Coles: correct the probabilities of 0-0, 1-0, 0-1 and 1-1 with one extra parameter (rho)
+        self.dixon_coles = dixon_coles
+        # Shots on target: fit on a mix of real goals and "deserved" goals (shots on target x conversion rate).
+        # 0 = goals only, 1 = shots only. Goals carry a lot of luck; shots on target are steadier.
+        self.shots_weight = shots_weight
 
     # ---------- fitting ----------
     def fit(self, matches: pd.DataFrame, as_of=None) -> "PoissonModel":
@@ -32,10 +52,11 @@ class PoissonModel:
 
         h = matches["home"].map(self.teams_).to_numpy()
         a = matches["away"].map(self.teams_).to_numpy()
-        yh = matches["home_goals"].to_numpy(float)
-        ya = matches["away_goals"].to_numpy(float)
+        goals_h = matches["home_goals"].to_numpy(float)
+        goals_a = matches["away_goals"].to_numpy(float)
         days = (as_of - matches["date"]).dt.days.clip(lower=0).to_numpy(float)
         w = np.exp(-self.xi * days)
+        yh, ya = self._target(matches, goals_h, goals_a, w)
 
         def unpack(p):
             return p[:n], p[n:2 * n], p[2 * n], p[2 * n + 1]
@@ -71,7 +92,37 @@ class PoissonModel:
         strength = self.attack_[est] - self.defence_[est]
         weakest = np.argsort(strength)[:3]
         self.prior_ = (self.attack_[est][weakest].mean(), self.defence_[est][weakest].mean())
+
+        # Dixon-Coles rho, fitted after the ratings (a common two-step simplification)
+        self.rho_ = 0.0
+        if self.dixon_coles:
+            lh = np.exp(self.mu_ + self.home_adv_ + self.attack_[h] + self.defence_[a])
+            la = np.exp(self.mu_ + self.attack_[a] + self.defence_[h])
+            low = (goals_h <= 1) & (goals_a <= 1)
+            lh, la, xh, xa, wl = lh[low], la[low], goals_h[low], goals_a[low], w[low]
+
+            def neg_ll(rho):
+                tau = dc_tau(xh, xa, lh, la, rho)
+                return np.inf if (tau <= 0).any() else -np.sum(wl * np.log(tau))
+
+            self.rho_ = minimize_scalar(neg_ll, bounds=(-0.3, 0.3), method="bounded").x
         return self
+
+    def _target(self, matches, goals_h, goals_a, w):
+        """What the ratings are fitted on: real goals, optionally mixed with shots-based 'deserved' goals."""
+        if self.shots_weight <= 0 or "home_sot" not in matches:
+            return goals_h, goals_a
+        sot_h = matches["home_sot"].to_numpy(float)
+        sot_a = matches["away_sot"].to_numpy(float)
+        ok = ~np.isnan(sot_h) & ~np.isnan(sot_a)
+        if ok.sum() == 0:
+            return goals_h, goals_a
+        # Conversion rate: goals per shot on target in this data (about 0.3 in the Premier League)
+        conv = (w[ok] * (goals_h[ok] + goals_a[ok])).sum() / (w[ok] * (sot_h[ok] + sot_a[ok])).sum()
+        s = self.shots_weight
+        yh = np.where(ok, (1 - s) * goals_h + s * conv * np.nan_to_num(sot_h), goals_h)
+        ya = np.where(ok, (1 - s) * goals_a + s * conv * np.nan_to_num(sot_a), goals_a)
+        return yh, ya
 
     # ---------- prediction ----------
     def _ratings(self, team):
@@ -97,7 +148,10 @@ class PoissonModel:
         """P(home scores i, away scores j) for i, j in 0..max_goals."""
         lh, la = self.expected_goals(home, away)
         g = np.arange(self.max_goals + 1)
-        return np.outer(poisson.pmf(g, lh), poisson.pmf(g, la))
+        m = np.outer(poisson.pmf(g, lh), poisson.pmf(g, la))
+        if self.rho_:
+            m[:2, :2] *= dc_tau(np.array([[0, 0], [1, 1]]), np.array([[0, 1], [0, 1]]), lh, la, self.rho_)
+        return m
 
     def predict_proba(self, home: str, away: str):
         """Return (P(home win), P(draw), P(away win))."""

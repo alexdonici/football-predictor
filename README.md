@@ -18,9 +18,9 @@ Each season is predicted week by week, using only matches played before each rou
 | Model                         | Log loss ↓ | Brier ↓ | Accuracy ↑ |
 |-------------------------------|-----------:|--------:|-----------:|
 | Bookmakers (margin removed)   |     1.0153 |  0.6100 |      49.5% |
-| **Poisson model**             | **1.0387** | **0.6250** | **47.4%** |
+| **Poisson model**             | **1.0343** | **0.6218** | **47.6%** |
 | Elo model                     |     1.0458 |  0.6301 |      47.1% |
-| Average (Poisson + Elo)       |     1.0399 |  0.6263 |      46.6% |
+| Average (Poisson + Elo)       |     1.0376 |  0.6247 |      47.6% |
 | Baseline (past H/D/A rates)   |     1.0845 |  0.6562 |      42.6% |
 
 **2024/25** (trained on 2021/22–2023/24, 380 matches)
@@ -28,14 +28,24 @@ Each season is predicted week by week, using only matches played before each rou
 | Model                         | Log loss ↓ | Brier ↓ | Accuracy ↑ |
 |-------------------------------|-----------:|--------:|-----------:|
 | Bookmakers (margin removed)   |     0.9706 |  0.5789 |      54.2% |
-| **Poisson model**             | **0.9833** | **0.5879** | **53.4%** |
+| **Poisson model**             | **0.9835** | **0.5876** | **52.9%** |
 | Elo model                     |     1.0072 |  0.6032 |      52.1% |
-| Average (Poisson + Elo)       |     0.9931 |  0.5944 |      52.4% |
+| Average (Poisson + Elo)       |     0.9928 |  0.5941 |      52.6% |
 | Baseline (past H/D/A rates)   |     1.0826 |  0.6569 |      40.8% |
 
-Using match results only, the Poisson model closes ~89% of the 2024/25 log-loss gap between the naive baseline and the bookmakers. The remaining gap is expected: bookmakers also price in injuries, transfers and team news.
+Using match results only, the Poisson model closes ~88% of the 2024/25 log-loss gap between the naive baseline and the bookmakers. The remaining gap is expected: bookmakers also price in injuries, transfers and team news.
 
-2025/26 was harder to predict for everyone: the bookmakers' log loss also rose from 0.971 to 1.015 (more draws, fewer goals). The Poisson model fell further behind (66% of the gap closed vs 89%), and its log loss rose from 0.99 in August–December to 1.09 in January–May. One hypothesis was that the ratings react too slowly to in-season changes; Elo, which updates after every match, was the first test of that idea (below).
+2025/26 was harder to predict for everyone: the bookmakers' log loss also rose from 0.971 to 1.015 (more draws, fewer goals). The Poisson model fell further behind (73% of the gap closed vs 88%), and its log loss rose from 0.99 in August–December to 1.08 in January–May. One hypothesis was that the ratings react too slowly to in-season changes; Elo, which updates after every match, was the first test of that idea (below).
+
+**Improving the Poisson model.** Three ideas were tried, each tuned on 2023/24 and then checked once on the two test seasons:
+
+| Idea | Result |
+|------|--------|
+| Tune the time decay (how fast old matches are forgotten) | No gain: the original one-year half-life was already optimal (0.9235 vs 0.9233 at best). Forgetting faster is clearly worse. |
+| Dixon-Coles correction for low scores (0-0, 1-0, 0-1, 1-1) | Negligible (0.9230 vs 0.9235). The correction assumes more 0-0 draws than independent Poisson predicts, but in today's Premier League 0-0 is *rarer* than predicted (5.2% vs 6.2% of matches), so its parameter comes out near zero. Kept as an option, off by default. |
+| **Shots on target**: fit the ratings on 75% real goals + 25% "deserved" goals (shots on target × the league's conversion rate, ≈0.32) | **Kept.** 2023/24: 0.9235 → 0.9224; 2024/25: unchanged (0.9833 → 0.9835); 2025/26: 1.0387 → **1.0343**, the share of the gap to the bookmakers closed rising from 66% to 73%. Goals carry a lot of luck; shots on target show more steadily who created chances. Using shots only (100%) is worse than goals only. |
+
+The tables above use the final model (with shots on target).
 
 **Elo vs Poisson.** Elo was expected to help because it reacts faster, but it is worse than Poisson in both test seasons, and averaging the two does not beat Poisson alone. Two lessons:
 - Tuning on 2023/24 picked a *slow* Elo (K = 10, no reset between seasons): football results are noisy, so reacting strongly to each match hurts.
@@ -58,12 +68,12 @@ Form adds at most ~0.005 on top of Elo, which is within noise, and home/away for
 
 | Log loss                        | 2023/24 (validation) | 2024/25 | 2025/26 |
 |---------------------------------|---------------------:|--------:|--------:|
-| Poisson model                   |               0.9226 |  **0.9875** |  1.0388 |
-| LogReg: Poisson only            |               0.9259 |  0.9919 |  1.0375 |
-| LogReg: Poisson + Elo + form    |           **0.9178** |  1.0009 |  **1.0357** |
-| XGBoost: Poisson + Elo + form   |               0.9301 |  1.0139 |  1.0371 |
+| Poisson model                   |               0.9217 |  **0.9878** |  1.0343 |
+| LogReg: Poisson only            |               0.9219 |  0.9931 |  1.0347 |
+| LogReg: Poisson + Elo + form    |           **0.9169** |  1.0001 |  **1.0335** |
+| XGBoost: Poisson + Elo + form   |               0.9243 |  1.0093 |  1.0359 |
 
-Settings were chosen on 2023/24 only, and 2024/25 and 2025/26 were run once. Machine learning does not beat the Poisson model consistently: the logistic regression wins on 2023/24 and 2025/26 but loses clearly on 2024/25, and on average Poisson is still best. XGBoost is the weakest of the ML models: with ~1,500 training matches and features that carry little extra signal, a more flexible model mostly learns noise.
+Settings were chosen on 2023/24 only, and 2024/25 and 2025/26 were run once. Machine learning does not beat the Poisson model consistently: the logistic regression wins on 2023/24 and (barely) on 2025/26 but loses clearly on 2024/25, and on average Poisson is still best. XGBoost is the weakest of the ML models: with ~1,500 training matches and features that carry little extra signal, a more flexible model mostly learns noise.
 
 The 2020/21 season is excluded from training: it was played without fans, away teams won more often than home teams (40% vs 38%), and including it made every ML model worse on the validation season.
 
@@ -102,7 +112,7 @@ Benchmarks: bookmaker implied probabilities (margin removed by normalisation) an
 
 ## Design notes
 
-- **Time decay** `xi = 0.0019`/day ≈ a one-year half-life. This is a trade-off: it makes the ratings slow to react. At the end of 2024/25 the model still ranks Man City above Liverpool, the champions. Tuning `xi` and adding form features is the next step.
+- **Time decay** `xi = 0.0019`/day ≈ a one-year half-life. Tuning it on 2023/24 confirmed this value; faster forgetting makes predictions worse, even though slow ratings can look odd (at the end of 2024/25 the model still ranked Man City above Liverpool, the champions).
 - **Promoted teams.** A team with no history starts at the level of the three weakest established teams. Without extra care, a newly promoted team's rating swings to extremes after one or two results (e.g. Ipswich got a 0.03% away-win chance at Man City after losing their opener). Ratings of new teams are therefore blended with that prior, weighted like 10 matches. The weight was chosen on 2023/24 (validation) and then checked once on 2024/25: metrics unchanged, extreme probabilities gone (minimum outcome probability 0.03% → 0.7%).
 - **Date parsing** handles both `dd/mm/yy` (football-data.co.uk) and ISO `yyyy-mm-dd` (some mirrors). Parsing ISO dates with `dayfirst=True` silently swaps day and month and breaks the chronological order of the backtest.
 - The optimiser uses an analytic gradient (verified against finite differences).
@@ -125,6 +135,7 @@ Tests run offline on simulated leagues: parameter recovery, valid probabilities,
 - [x] Elo ratings
 - [x] Recent form features (little value beyond Elo)
 - [x] Machine learning models (logistic regression / XGBoost): no consistent gain over Poisson
+- [x] Poisson improvements: shots on target (kept), Dixon-Coles and time-decay tuning (no gain)
 - [ ] Web dashboard (Django or Streamlit)
 - [ ] Docker image and online deployment
 

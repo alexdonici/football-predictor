@@ -214,3 +214,39 @@ def test_logistic_model_gives_valid_probabilities():
     p = fit_predict(logistic_model(), data.iloc[:120], data.iloc[120:], ALL_FEATURES)
     assert p.shape == (60, 3)
     assert p.sum(axis=1) == pytest.approx(np.ones(60))
+
+
+# ---------- Poisson improvements ----------
+from src.poisson import dc_tau  # noqa: E402
+
+
+def test_dixon_coles_tau():
+    assert dc_tau(0, 0, 1.5, 1.0, 0.0) == 1
+    assert dc_tau(2, 3, 1.5, 1.0, -0.1) == 1          # only scores up to 1-1 are adjusted
+    assert dc_tau(0, 0, 1.5, 1.0, -0.1) > 1           # negative rho: more 0-0
+    assert dc_tau(1, 0, 1.5, 1.0, -0.1) < 1           # ... and fewer 1-0
+
+
+def test_dixon_coles_probabilities_are_valid():
+    df, _, _ = simulate_league()
+    model = PoissonModel(dixon_coles=True).fit(df)
+    assert -0.3 <= model.rho_ <= 0.3
+    assert sum(model.predict_proba("T0", "T1")) == pytest.approx(1)
+
+
+def test_shots_weight_zero_or_missing_shots_means_goals_only():
+    df, _, _ = simulate_league()
+    goals_only = PoissonModel(shots_weight=0.0).fit(df)
+    no_shot_data = PoissonModel(shots_weight=0.5).fit(df)          # simulated data has no shot columns
+    np.testing.assert_allclose(goals_only.attack_, no_shot_data.attack_)
+    with_nan_shots = PoissonModel(shots_weight=0.5).fit(df.assign(home_sot=np.nan, away_sot=np.nan))
+    np.testing.assert_allclose(goals_only.attack_, with_nan_shots.attack_)
+
+
+def test_shots_on_target_move_the_ratings():
+    df, _, _ = simulate_league()
+    df = df.assign(home_sot=3.0, away_sot=3.0)
+    df.loc[df["home"] == "T0", "home_sot"] = 12.0                  # T0 creates many chances at home
+    shots = PoissonModel(shots_weight=0.5).fit(df)
+    goals = PoissonModel(shots_weight=0.0).fit(df)
+    assert shots.attack_[shots.teams_["T0"]] > goals.attack_[goals.teams_["T0"]]

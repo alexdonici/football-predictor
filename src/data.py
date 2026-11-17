@@ -3,6 +3,7 @@ import time
 from datetime import date
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import requests
 
@@ -72,6 +73,9 @@ def load_season(league: str, season: str) -> pd.DataFrame:
     })
     if odds_cols:
         out["odds_h"], out["odds_d"], out["odds_a"] = (df[c] for c in odds_cols)
+    # Shots on target (missing in some old seasons and lower leagues)
+    for col, src in [("home_sot", "HST"), ("away_sot", "AST")]:
+        out[col] = pd.to_numeric(df[src], errors="coerce") if src in df.columns else np.nan
     out["season"] = season
     return out
 
