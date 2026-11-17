@@ -173,3 +173,44 @@ def test_elo_all_teams_start_equal_in_first_season():
     f = build_features(df)
     # Nobody had played before these matches, so each pair is level: the difference is just home advantage
     assert (f["elo_diff"] == EloModel().home_adv).all()
+
+
+# ---------- Machine learning ----------
+from src.ml import ALL_FEATURES, build_dataset, fit_predict, logistic_model  # noqa: E402
+
+
+def two_season_league():
+    df1, _, _ = simulate_league(rounds=2, seed=1, start="2022-08-01")
+    df2, _, _ = simulate_league(rounds=2, seed=2, start="2023-08-01")
+    return pd.concat([df1.assign(season="2223"), df2.assign(season="2324")], ignore_index=True)
+
+
+def test_dataset_rows_start_at_first_season_and_have_poisson_probabilities():
+    data = build_dataset(two_season_league(), "2324")
+    assert (data["season"] == "2324").all()
+    assert len(data) == 180
+    assert data[["pois_h", "pois_d", "pois_a"]].sum(axis=1).to_numpy() == pytest.approx(1)
+
+
+def test_dataset_never_uses_the_match_itself_or_the_future():
+    df = two_season_league()
+    # 180 matches per season, one per day; the second season starts at row 180 and is predicted
+    # in 7-day blocks. Row 180 + 55 is the last day of a block, so earlier matches of the same
+    # block would see its result if the backtest leaked.
+    k = 180 + 55
+    before = build_dataset(df, "2324")
+    changed = df.copy()
+    changed.loc[k:, "home_goals"] += 5
+    changed.loc[k:, "result"] = "H"
+    after = build_dataset(changed, "2324")
+    cols = ALL_FEATURES + ["pois_h", "pois_d", "pois_a"]
+    rows = before["date"] < df.loc[k, "date"]   # matches played strictly before the changed one
+    assert rows.sum() == 55
+    pd.testing.assert_frame_equal(before.loc[rows, cols], after.loc[rows, cols])
+
+
+def test_logistic_model_gives_valid_probabilities():
+    data = build_dataset(two_season_league(), "2324")
+    p = fit_predict(logistic_model(), data.iloc[:120], data.iloc[120:], ALL_FEATURES)
+    assert p.shape == (60, 3)
+    assert p.sum(axis=1) == pytest.approx(np.ones(60))

@@ -4,9 +4,10 @@
 
 Predicts the probabilities of home win / draw / away win (1/X/2) for football matches and benchmarks them against bookmaker odds.
 
-Two models so far:
+Two hand-built models, plus machine-learning models that combine them:
 - **Poisson goals model**: every team gets an attack and a defence rating, fitted by maximum likelihood on historical results, with recent matches weighted more (exponential time decay). Match probabilities come from the distribution of possible scores.
 - **Elo ratings**: every team has one rating, updated after each match (bigger wins move it more). The rating difference is turned into home/draw/away probabilities with an ordered logistic model fitted on past matches.
+- **Machine learning** (logistic regression, XGBoost): learns how to combine the Poisson probabilities, Elo and recent form.
 
 ## Results (Premier League, walk-forward)
 
@@ -52,6 +53,21 @@ Elo is still kept: it is a compact strength measure and will be one of the input
 | Form only (no Elo)         |  0.9825 |  1.0317 |  1.0525 |
 
 Form adds at most ~0.005 on top of Elo, which is within noise, and home/away form adds nothing. Elo is already a weighted summary of past results, so the last five matches say little that is new.
+
+**Can machine learning do better?** A logistic regression and an XGBoost model were trained on a table with one row per match: the Poisson probabilities, the Elo difference and the form features, all as they were *before* kick-off. Each test season is predicted by a model trained on all earlier seasons (`python -m experiments.ml_vs_poisson`):
+
+| Log loss                        | 2023/24 (validation) | 2024/25 | 2025/26 |
+|---------------------------------|---------------------:|--------:|--------:|
+| Poisson model                   |               0.9226 |  **0.9875** |  1.0388 |
+| LogReg: Poisson only            |               0.9259 |  0.9919 |  1.0375 |
+| LogReg: Poisson + Elo + form    |           **0.9178** |  1.0009 |  **1.0357** |
+| XGBoost: Poisson + Elo + form   |               0.9301 |  1.0139 |  1.0371 |
+
+Settings were chosen on 2023/24 only, and 2024/25 and 2025/26 were run once. Machine learning does not beat the Poisson model consistently: the logistic regression wins on 2023/24 and 2025/26 but loses clearly on 2024/25, and on average Poisson is still best. XGBoost is the weakest of the ML models: with ~1,500 training matches and features that carry little extra signal, a more flexible model mostly learns noise.
+
+The 2020/21 season is excluded from training: it was played without fans, away teams won more often than home teams (40% vs 38%), and including it made every ML model worse on the validation season.
+
+These numbers come from a longer history (from 2018/19) than the tables above, so the Poisson results differ slightly from them.
 
 ## Data
 
@@ -99,7 +115,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Tests run offline on simulated leagues: parameter recovery, valid probabilities, metric sanity checks, date parsing, current-season detection, Elo behaviour, form calculations and no-look-ahead checks of the backtest, Elo and the features. They run on every push via GitHub Actions.
+Tests run offline on simulated leagues: parameter recovery, valid probabilities, metric sanity checks, date parsing, current-season detection, Elo behaviour, form calculations, ML probabilities and no-look-ahead checks of the backtest, Elo, the features and the ML training table. They run on every push via GitHub Actions.
 
 ## Roadmap
 
@@ -108,7 +124,7 @@ Tests run offline on simulated leagues: parameter recovery, valid probabilities,
 - [x] Walk-forward backtest vs bookmakers
 - [x] Elo ratings
 - [x] Recent form features (little value beyond Elo)
-- [ ] Machine learning model (logistic regression / XGBoost)
+- [x] Machine learning models (logistic regression / XGBoost): no consistent gain over Poisson
 - [ ] Web dashboard (Django or Streamlit)
 - [ ] Docker image and online deployment
 
@@ -119,6 +135,7 @@ src/data.py       download and clean match data
 src/poisson.py    Poisson goals model
 src/elo.py        Elo ratings + ordered logit for 1X2
 src/features.py   pre-match features (Elo, form) for ML models
+src/ml.py         ML training table, logistic regression and XGBoost
 experiments/      reproducible one-off analyses
 src/evaluate.py   walk-forward backtest and metrics
 main.py           command-line entry point

@@ -1,6 +1,6 @@
 ,log loss,Brier,accuracy
 Poisson model,1.0387,0.625,0.4737
-Elo model,1.0457,0.63,0.4711
-Average (Poisson + Elo),1.0399,0.6263,0.4684
+Elo model,1.0458,0.6301,0.4711
+Average (Poisson + Elo),1.0399,0.6263,0.4658
 Bookmakers,1.0153,0.61,0.4947
 Baseline (past H/D/A rates),1.0845,0.6562,0.4263
