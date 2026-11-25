@@ -89,6 +89,15 @@ streamlit run streamlit_app.py
 
 Pick two teams to see the home/draw/away probabilities, expected goals and the most likely exact scores; browse the team ratings; and see how the model did against the bookmakers in the last finished season, week by week. It covers the five big European leagues and includes the matches already played in the current season.
 
+### With Docker
+
+```bash
+docker build -t football-predictor .
+docker run -p 8501:8501 football-predictor
+```
+
+Then open http://localhost:8501. The image runs as a non-root user and has a health check; GitHub Actions builds it and checks that the dashboard starts on every push.
+
 ## Data
 
 Historical results and odds from [football-data.co.uk](https://www.football-data.co.uk/), downloaded automatically and cached in `data/raw/`. Finished seasons are downloaded once; the season in progress is refreshed when the cache is older than 12 hours.
@@ -147,7 +156,8 @@ Tests run offline on simulated leagues: parameter recovery, valid probabilities,
 - [x] Machine learning models (logistic regression / XGBoost): no consistent gain over Poisson
 - [x] Poisson improvements: shots on target (kept), Dixon-Coles and time-decay tuning (no gain)
 - [x] Web dashboard (Streamlit)
-- [ ] Docker image and online deployment
+- [x] Docker image (built and smoke-tested in CI)
+- [ ] Online deployment
 
 ## Project structure
 
@@ -161,6 +171,7 @@ experiments/      reproducible one-off analyses
 src/evaluate.py   walk-forward backtest and metrics
 main.py           command-line entry point
 streamlit_app.py  web dashboard
+Dockerfile        container image for the dashboard
 tests/            offline unit tests
 results/          backtest outputs (predictions, metrics)
 ```
