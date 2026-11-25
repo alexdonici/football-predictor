@@ -73,8 +73,9 @@ def load_season(league: str, season: str) -> pd.DataFrame:
     })
     if odds_cols:
         out["odds_h"], out["odds_d"], out["odds_a"] = (df[c] for c in odds_cols)
-    # Shots on target (missing in some old seasons and lower leagues)
-    for col, src in [("home_sot", "HST"), ("away_sot", "AST")]:
+    # Match statistics: shots on target, all shots, corners (missing in some old seasons and lower leagues)
+    for col, src in [("home_sot", "HST"), ("away_sot", "AST"), ("home_shots", "HS"), ("away_shots", "AS"),
+                     ("home_corners", "HC"), ("away_corners", "AC")]:
         out[col] = pd.to_numeric(df[src], errors="coerce") if src in df.columns else np.nan
     out["season"] = season
     return out

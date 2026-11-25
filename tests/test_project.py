@@ -250,3 +250,12 @@ def test_shots_on_target_move_the_ratings():
     shots = PoissonModel(shots_weight=0.5).fit(df)
     goals = PoissonModel(shots_weight=0.0).fit(df)
     assert shots.attack_[shots.teams_["T0"]] > goals.attack_[goals.teams_["T0"]]
+
+
+def test_corners_and_off_target_shots_are_optional_extras():
+    df, _, _ = simulate_league()
+    df = df.assign(home_sot=3.0, away_sot=3.0, home_shots=10.0, away_shots=10.0, home_corners=5.0, away_corners=5.0)
+    df.loc[df["home"] == "T0", "home_corners"] = 15.0
+    base = PoissonModel(shots_weight=0.5).fit(df)
+    with_corners = PoissonModel(shots_weight=0.5, corner_value=0.5).fit(df)
+    assert with_corners.attack_[with_corners.teams_["T0"]] > base.attack_[base.teams_["T0"]]

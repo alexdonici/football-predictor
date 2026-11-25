@@ -45,6 +45,8 @@ Using match results only, the Poisson model closes ~88% of the 2024/25 log-loss 
 | Dixon-Coles correction for low scores (0-0, 1-0, 0-1, 1-1) | Negligible (0.9230 vs 0.9235). The correction assumes more 0-0 draws than independent Poisson predicts, but in today's Premier League 0-0 is *rarer* than predicted (5.2% vs 6.2% of matches), so its parameter comes out near zero. Kept as an option, off by default. |
 | **Shots on target**: fit the ratings on 75% real goals + 25% "deserved" goals (shots on target × the league's conversion rate, ≈0.32) | **Kept.** 2023/24: 0.9235 → 0.9224; 2024/25: unchanged (0.9833 → 0.9835); 2025/26: 1.0387 → **1.0343**, the share of the gap to the bookmakers closed rising from 66% to 73%. Goals carry a lot of luck; shots on target show more steadily who created chances. Using shots only (100%) is worse than goals only. |
 
+| Also use off-target shots and corners in the "deserved" goals | No gain on 2023/24 (best: 0.9224 with shots on target only). Past off-target shots and corners do predict future goals on their own, but the Poisson model already captures that through shots on target. As extra ML features they gave a tiny gain on 2023/24 (0.9169 → 0.9153), too small to be worth it. Available as options (`off_target_value`, `corner_value`), off by default. |
+
 The tables above use the final model (with shots on target).
 
 **Elo vs Poisson.** Elo was expected to help because it reacts faster, but it is worse than Poisson in both test seasons, and averaging the two does not beat Poisson alone. Two lessons:
@@ -78,6 +80,14 @@ Settings were chosen on 2023/24 only, and 2024/25 and 2025/26 were run once. Mac
 The 2020/21 season is excluded from training: it was played without fans, away teams won more often than home teams (40% vs 38%), and including it made every ML model worse on the validation season.
 
 These numbers come from a longer history (from 2018/19) than the tables above, so the Poisson results differ slightly from them.
+
+## Web dashboard
+
+```bash
+streamlit run streamlit_app.py
+```
+
+Pick two teams to see the home/draw/away probabilities, expected goals and the most likely exact scores; browse the team ratings; and see how the model did against the bookmakers in the last finished season, week by week. It covers the five big European leagues and includes the matches already played in the current season.
 
 ## Data
 
@@ -136,7 +146,7 @@ Tests run offline on simulated leagues: parameter recovery, valid probabilities,
 - [x] Recent form features (little value beyond Elo)
 - [x] Machine learning models (logistic regression / XGBoost): no consistent gain over Poisson
 - [x] Poisson improvements: shots on target (kept), Dixon-Coles and time-decay tuning (no gain)
-- [ ] Web dashboard (Django or Streamlit)
+- [x] Web dashboard (Streamlit)
 - [ ] Docker image and online deployment
 
 ## Project structure
@@ -150,6 +160,7 @@ src/ml.py         ML training table, logistic regression and XGBoost
 experiments/      reproducible one-off analyses
 src/evaluate.py   walk-forward backtest and metrics
 main.py           command-line entry point
+streamlit_app.py  web dashboard
 tests/            offline unit tests
 results/          backtest outputs (predictions, metrics)
 ```

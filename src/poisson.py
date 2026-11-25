@@ -30,7 +30,8 @@ def dc_tau(x, y, lh, la, rho):
 
 class PoissonModel:
     def __init__(self, xi: float = 0.0019, ridge: float = 1e-3, max_goals: int = 10, prior_matches: float = 10.0,
-                 dixon_coles: bool = False, shots_weight: float = 0.25):
+                 dixon_coles: bool = False, shots_weight: float = 0.25,
+                 off_target_value: float = 0.0, corner_value: float = 0.0):
         self.xi = xi              # time decay per day (0.0019 ~ half-life of one year)
         self.ridge = ridge        # small L2 penalty for stability
         self.max_goals = max_goals
@@ -42,6 +43,9 @@ class PoissonModel:
         # Shots on target: fit on a mix of real goals and "deserved" goals (shots on target x conversion rate).
         # 0 = goals only, 1 = shots only. Goals carry a lot of luck; shots on target are steadier.
         self.shots_weight = shots_weight
+        # How much an off-target shot and a corner count, relative to a shot on target, in "deserved" goals
+        self.off_target_value = off_target_value
+        self.corner_value = corner_value
 
     # ---------- fitting ----------
     def fit(self, matches: pd.DataFrame, as_of=None) -> "PoissonModel":
@@ -108,20 +112,31 @@ class PoissonModel:
             self.rho_ = minimize_scalar(neg_ll, bounds=(-0.3, 0.3), method="bounded").x
         return self
 
+    def _chances(self, matches, side: str) -> np.ndarray:
+        """Chance index for one side: shots on target + weighted off-target shots + weighted corners."""
+        sot = matches[f"{side}_sot"].to_numpy(float)
+        out = sot.copy()
+        if self.off_target_value:
+            shots = matches[f"{side}_shots"].to_numpy(float) if f"{side}_shots" in matches else np.full_like(sot, np.nan)
+            out = out + self.off_target_value * (shots - sot)
+        if self.corner_value:
+            corners = matches[f"{side}_corners"].to_numpy(float) if f"{side}_corners" in matches else np.full_like(sot, np.nan)
+            out = out + self.corner_value * corners
+        return out
+
     def _target(self, matches, goals_h, goals_a, w):
-        """What the ratings are fitted on: real goals, optionally mixed with shots-based 'deserved' goals."""
+        """What the ratings are fitted on: real goals, optionally mixed with 'deserved' goals from match statistics."""
         if self.shots_weight <= 0 or "home_sot" not in matches:
             return goals_h, goals_a
-        sot_h = matches["home_sot"].to_numpy(float)
-        sot_a = matches["away_sot"].to_numpy(float)
-        ok = ~np.isnan(sot_h) & ~np.isnan(sot_a)
+        ch_h, ch_a = self._chances(matches, "home"), self._chances(matches, "away")
+        ok = ~np.isnan(ch_h) & ~np.isnan(ch_a)
         if ok.sum() == 0:
             return goals_h, goals_a
-        # Conversion rate: goals per shot on target in this data (about 0.3 in the Premier League)
-        conv = (w[ok] * (goals_h[ok] + goals_a[ok])).sum() / (w[ok] * (sot_h[ok] + sot_a[ok])).sum()
+        # Conversion rate: goals per unit of the chance index in this data (about 0.32 per shot on target)
+        conv = (w[ok] * (goals_h[ok] + goals_a[ok])).sum() / (w[ok] * (ch_h[ok] + ch_a[ok])).sum()
         s = self.shots_weight
-        yh = np.where(ok, (1 - s) * goals_h + s * conv * np.nan_to_num(sot_h), goals_h)
-        ya = np.where(ok, (1 - s) * goals_a + s * conv * np.nan_to_num(sot_a), goals_a)
+        yh = np.where(ok, (1 - s) * goals_h + s * conv * np.nan_to_num(ch_h), goals_h)
+        ya = np.where(ok, (1 - s) * goals_a + s * conv * np.nan_to_num(ch_a), goals_a)
         return yh, ya
 
     # ---------- prediction ----------
