@@ -2,6 +2,8 @@
 
 [![tests](https://github.com/alexdonici/football-predictor/actions/workflows/tests.yml/badge.svg)](https://github.com/alexdonici/football-predictor/actions/workflows/tests.yml)
 
+**Live dashboard: [football-predictor-ahnexrhd7bgpf92ewdpmgu.streamlit.app](https://football-predictor-ahnexrhd7bgpf92ewdpmgu.streamlit.app/)**
+
 Predicts the probabilities of home win / draw / away win (1/X/2) for football matches and benchmarks them against bookmaker odds.
 
 Two hand-built models, plus machine-learning models that combine them:
@@ -83,6 +85,8 @@ These numbers come from a longer history (from 2018/19) than the tables above, s
 
 ## Web dashboard
 
+Try it online: **[live dashboard](https://football-predictor-ahnexrhd7bgpf92ewdpmgu.streamlit.app/)**, or run it locally:
+
 ```bash
 streamlit run streamlit_app.py
 ```
@@ -157,7 +161,7 @@ Tests run offline on simulated leagues: parameter recovery, valid probabilities,
 - [x] Poisson improvements: shots on target (kept), Dixon-Coles and time-decay tuning (no gain)
 - [x] Web dashboard (Streamlit)
 - [x] Docker image (built and smoke-tested in CI)
-- [ ] Online deployment
+- [x] Online deployment (Streamlit Community Cloud)
 
 ## Project structure
 
