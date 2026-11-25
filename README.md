@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/alexdonici/football-predictor/actions/workflows/tests.yml/badge.svg)](https://github.com/alexdonici/football-predictor/actions/workflows/tests.yml)
 
-**Live dashboard: [football-predictor-ahnexrhd7bgpf92ewdpmgu.streamlit.app](https://football-predictor-ahnexrhd7bgpf92ewdpmgu.streamlit.app/)**
+**Live dashboard: [football-predictor-alexdonici.streamlit.app](https://football-predictor-alexdonici.streamlit.app/)**
 
 Predicts the probabilities of home win / draw / away win (1/X/2) for football matches and benchmarks them against bookmaker odds.
 
@@ -85,7 +85,7 @@ These numbers come from a longer history (from 2018/19) than the tables above, s
 
 ## Web dashboard
 
-Try it online: **[live dashboard](https://football-predictor-ahnexrhd7bgpf92ewdpmgu.streamlit.app/)**, or run it locally:
+Try it online: **[live dashboard](https://football-predictor-alexdonici.streamlit.app/)**, or run it locally:
 
 ```bash
 streamlit run streamlit_app.py
